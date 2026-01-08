@@ -91,9 +91,37 @@ def send_message(username: str, message: Message):
     database.send_message(username, message.to_user, message.content)
     return {"status": "success"}
 
-@app.get("/api/apps/{username}")
-def get_apps(username: str):
-    return database.get_custom_apps(username)
+# Ensure Admin exists
+if not database.get_user("admin"):
+    database.create_user("admin", "1000011", is_admin=True)
+
+@app.get("/api/search/{query}")
+def search_users(query: str):
+    users = database._load_json(database.USERS_FILE)
+    results = [u for u in users.keys() if query.lower() in u.lower()]
+    return results[:10]
+
+@app.get("/api/friends/{username}")
+def get_friends(username: str):
+    user_data = database.get_user(username)
+    if not user_data: return []
+    return {
+        "friends": user_data.get("friends", []),
+        "received": user_data.get("requests_received", []),
+        "sent": user_data.get("requests_sent", [])
+    }
+
+@app.post("/api/friends/request")
+def send_friend_request(req: dict):
+    # expect { "from": "...", "to": "..." }
+    success = database.send_friend_request(req['from'], req['to'])
+    return {"status": "success" if success else "failed"}
+
+@app.post("/api/friends/accept")
+def accept_friend_request(req: dict):
+    # expect { "user": "...", "friend": "..." }
+    success = database.accept_friend_request(req['user'], req['friend'])
+    return {"status": "success" if success else "failed"}
 
 @app.post("/api/apps/{username}")
 def save_app(username: str, app: CustomApp):
