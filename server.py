@@ -98,7 +98,7 @@ if not database.get_user("admin"):
 @app.get("/api/search/{query}")
 def search_users(query: str):
     users = database._load_json(database.USERS_FILE)
-    results = [u for u in users.keys() if query.lower() in u.lower()]
+    results = [u for u in users.keys() if query.lower() in u.lower() and u != "admin"]
     return results[:10]
 
 @app.get("/api/friends/{username}")
