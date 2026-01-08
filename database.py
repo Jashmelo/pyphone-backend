@@ -47,7 +47,7 @@ def create_user(username, password, is_admin=False):
         "friends": [],
         "requests_sent": [],
         "requests_received": [],
-        "settings": {"clock_24h": True}
+        "settings": {"clock_24h": True, "wallpaper": "neural"}
     }
     _save_json(USERS_FILE, users)
     return True
