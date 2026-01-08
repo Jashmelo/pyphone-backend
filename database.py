@@ -142,13 +142,15 @@ def get_messages(username):
     all_msgs = _load_json(MESSAGES_FILE)
     return all_msgs.get(username, [])
 
-def send_message(from_user, to_user, content):
+def send_message(from_user, to_user, content, attachment_url=None, attachment_type=None):
     all_msgs = _load_json(MESSAGES_FILE)
     
     msg_obj = {
         "from": from_user,
         "to": to_user,
         "content": content,
+        "attachment_url": attachment_url,
+        "attachment_type": attachment_type,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
     

@@ -1,12 +1,22 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
 import database
 import uvicorn
 import os
+import shutil
+import random
 
 app = FastAPI()
+
+# Create uploads dir if not exists
+UPLOADS_DIR = "uploads"
+if not os.path.exists(UPLOADS_DIR):
+    os.makedirs(UPLOADS_DIR)
+
+app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 # Enable CORS for Deployments
 app.add_middleware(
@@ -36,6 +46,8 @@ class Note(BaseModel):
 class Message(BaseModel):
     to_user: str
     content: str
+    attachment_url: Optional[str] = None
+    attachment_type: Optional[str] = None
 
 class CustomApp(BaseModel):
     app_name: str
@@ -88,7 +100,13 @@ def get_messages(username: str):
 @app.post("/api/messages/{username}")
 def send_message(username: str, message: Message):
     # Note: 'username' here is the sender
-    database.send_message(username, message.to_user, message.content)
+    database.send_message(
+        username, 
+        message.to_user, 
+        message.content, 
+        message.attachment_url, 
+        message.attachment_type
+    )
     return {"status": "success"}
 
 # Ensure Admin exists
@@ -170,6 +188,51 @@ def set_app_visibility(req: dict):
 def save_app(username: str, app: CustomApp):
     database.save_custom_app(username, app.app_name, app.code, app.is_public)
     return {"status": "success"}
+
+# --- NEW AI & MULTIMEDIA ENDPOINTS ---
+
+class AIChat(BaseModel):
+    message: str
+    context: Optional[str] = None
+
+@app.post("/api/ai/nexus")
+def nexus_ai_chat(chat: AIChat):
+    # Simulated AI logic
+    responses = [
+        "Analyzing kernel data...",
+        "Interesting query. Here's what I found in the system logs.",
+        "Your request has been processed. Powering up neural links.",
+        "I'm sorry, I cannot perform that action outside of sandbox mode.",
+        "System stability is at 99.8%. How can I assist further?",
+        "Searching local databases for relevant information."
+    ]
+    return {"response": f"{random.choice(responses)}\n\nYou said: '{chat.message}'"}
+
+@app.post("/api/ai/studio")
+def studio_ai_assistant(chat: AIChat):
+    # Context-aware coding assistant simulation
+    lang_info = ""
+    if chat.context and "[LANG:" in chat.context:
+        lang_info = f"I see you're writing in {chat.context.split(']')[0][6:]}."
+    
+    return {
+        "response": f"{lang_info}\nBased on your request '{chat.message}', I suggest checking your loops and ensuring all imports are correct. I've optimized your logic buffers."
+    }
+
+@app.post("/api/upload/{username}")
+async def upload_file(username: str, file: UploadFile = File(...)):
+    # Simple file saving
+    filename = f"{username}_{random.randint(1000, 9999)}_{file.filename}"
+    file_path = os.path.join(UPLOADS_DIR, filename)
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    return {
+        "url": f"/uploads/{filename}",
+        "type": file.content_type,
+        "name": file.filename
+    }
 
 if __name__ == "__main__":
     # Use PORT environment variable if available, otherwise 8000
