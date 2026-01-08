@@ -123,6 +123,49 @@ def accept_friend_request(req: dict):
     success = database.accept_friend_request(req['user'], req['friend'])
     return {"status": "success" if success else "failed"}
 
+@app.get("/api/admin/stats")
+def get_admin_stats():
+    users = database._load_json(database.USERS_FILE)
+    messages = database._load_json(database.MESSAGES_FILE)
+    
+    total_messages = 0
+    for user_msgs in messages.values():
+        total_messages += len(user_msgs)
+        
+    return {
+        "total_users": len(users),
+        "total_messages": total_messages,
+        "users_list": list(users.keys())
+    }
+
+@app.get("/api/admin/feedback")
+def get_all_feedback():
+    return database.get_feedback()
+
+@app.delete("/api/admin/feedback/{fb_id}")
+def delete_feedback(fb_id: int):
+    database.delete_feedback(fb_id)
+    return {"status": "success"}
+
+@app.get("/api/admin/users")
+def get_users_list():
+    return database.get_all_users()
+
+@app.delete("/api/admin/users/{username}")
+def delete_user(username: str):
+    success = database.delete_user(username)
+    return {"status": "success" if success else "failed"}
+
+@app.get("/api/admin/apps")
+def get_all_apps_for_moderation():
+    return database.get_all_custom_apps()
+
+@app.post("/api/admin/apps/visibility")
+def set_app_visibility(req: dict):
+    # expect { "owner": "...", "app_name": "...", "is_public": bool }
+    success = database.set_app_visibility(req['owner'], req['app_name'], req['is_public'])
+    return {"status": "success" if success else "failed"}
+
 @app.post("/api/apps/{username}")
 def save_app(username: str, app: CustomApp):
     database.save_custom_app(username, app.app_name, app.code, app.is_public)

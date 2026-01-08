@@ -156,50 +156,86 @@ def send_message(from_user, to_user, content):
     all_msgs[to_user] = user_msgs
     _save_json(MESSAGES_FILE, all_msgs)
 
+# User Operations
+def get_all_users():
+    users = _load_json(USERS_FILE)
+    return [{"username": u, "is_admin": d.get("is_admin", False)} for u, d in users.items()]
+
+def delete_user(username):
+    if username == "admin": return False # Protect admin
+    
+    # 1. Delete user entry
+    users = _load_json(USERS_FILE)
+    if username in users:
+        del users[username]
+        _save_json(USERS_FILE, users)
+    
+    # 2. Delete notes
+    notes = _load_json(NOTES_FILE)
+    if username in notes:
+        del notes[username]
+        _save_json(NOTES_FILE, notes)
+        
+    # 3. Clean up messages (optional: delete messages *to* this user)
+    msgs = _load_json(MESSAGES_FILE)
+    if username in msgs:
+        del msgs[username]
+        _save_json(MESSAGES_FILE, msgs)
+        
+    # 4. Cleanup apps
+    apps = _load_json(APPS_FILE)
+    if username in apps:
+        del apps[username]
+        _save_json(APPS_FILE, apps)
+        
+    return True
+
+# ... existing code ...
+
 # Feedback
 def send_feedback(username, content):
     feedbacks = _load_json(FEEDBACK_FILE)
-    if isinstance(feedbacks, dict): feedbacks = [] # Handle if file was init as dict
+    if not isinstance(feedbacks, list): feedbacks = [] 
     feedbacks.append({
+        "id": len(feedbacks) + 1,
         "user": username,
         "content": content,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "pending"
     })
     _save_json(FEEDBACK_FILE, feedbacks)
 
 def get_feedback():
-    return _load_json(FEEDBACK_FILE)
+    feedbacks = _load_json(FEEDBACK_FILE)
+    if not isinstance(feedbacks, list): return []
+    return feedbacks
 
-# Custom Apps
-def get_custom_apps(username):
-    apps = _load_json(APPS_FILE)
-    return apps.get(username, [])
+def delete_feedback(feedback_id):
+    feedbacks = _load_json(FEEDBACK_FILE)
+    if not isinstance(feedbacks, list): return
+    feedbacks = [f for f in feedbacks if f.get('id') != feedback_id]
+    _save_json(FEEDBACK_FILE, feedbacks)
 
-def save_custom_app(username, app_name, code, is_public=False):
-    apps = _load_json(APPS_FILE)
-    user_apps = apps.get(username, [])
-    
-    # Update if exists
-    for app in user_apps:
-        if app['name'] == app_name:
-            app['code'] = code
-            app['is_public'] = is_public
-            break
-    else:
-        user_apps.append({
-            "name": app_name,
-            "code": code,
-            "is_public": is_public
-        })
-    
-    apps[username] = user_apps
-    _save_json(APPS_FILE, apps)
+# Custom Apps Oversight
+def get_all_custom_apps():
+    # Returns all apps across all users
+    all_users_apps = _load_json(APPS_FILE)
+    results = []
+    for username, apps in all_users_apps.items():
+        for app in apps:
+            results.append({**app, "owner": username})
+    return results
 
-def delete_custom_app(username, app_name):
+def set_app_visibility(owner, app_name, is_public):
     apps = _load_json(APPS_FILE)
-    if username in apps:
-        apps[username] = [a for a in apps[username] if a['name'] != app_name]
+    if owner in apps:
+        for app in apps[owner]:
+            if app['name'] == app_name:
+                app['is_public'] = is_public
+                break
         _save_json(APPS_FILE, apps)
+        return True
+    return False
 
 # Initialize
 _init_db()
