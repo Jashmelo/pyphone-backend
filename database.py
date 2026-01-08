@@ -1,0 +1,205 @@
+import json
+import os
+import hashlib
+from datetime import datetime
+
+DATA_DIR = "data"
+USERS_FILE = os.path.join(DATA_DIR, "users.json")
+NOTES_FILE = os.path.join(DATA_DIR, "notes.json")
+MESSAGES_FILE = os.path.join(DATA_DIR, "messages.json")
+FEEDBACK_FILE = os.path.join(DATA_DIR, "feedback.json")
+APPS_FILE = os.path.join(DATA_DIR, "custom_apps.json")
+
+def _init_db():
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
+    for f in [USERS_FILE, NOTES_FILE, MESSAGES_FILE, FEEDBACK_FILE, APPS_FILE]:
+        if not os.path.exists(f):
+            with open(f, 'w') as fp:
+                json.dump({}, fp) # Default empty dict or list
+
+def _load_json(filepath):
+    try:
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+def _save_json(filepath, data):
+    with open(filepath, 'w') as f:
+        json.dump(data, f, indent=2)
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+# User Operations
+def get_user(username):
+    users = _load_json(USERS_FILE)
+    return users.get(username)
+
+def create_user(username, password, is_admin=False):
+    users = _load_json(USERS_FILE)
+    if username in users:
+        return False
+    users[username] = {
+        "password": hash_password(password),
+        "is_admin": is_admin,
+        "friends": [],
+        "requests_sent": [],
+        "requests_received": [],
+        "settings": {"clock_24h": True}
+    }
+    _save_json(USERS_FILE, users)
+    return True
+
+def verify_login(username, password):
+    user = get_user(username)
+    if user and user['password'] == hash_password(password):
+        return True
+    return False
+
+def get_friends(username):
+    user = get_user(username)
+    return user.get("friends", []) if user else []
+
+def send_friend_request(from_user, to_user):
+    users = _load_json(USERS_FILE)
+    if to_user not in users or  to_user == from_user:
+        return False
+    if to_user in users[from_user]['friends']:
+        return False # Already friends
+    
+    if from_user not in users[to_user]['requests_received']:
+        users[to_user]['requests_received'].append(from_user)
+        users[from_user]['requests_sent'].append(to_user)
+        _save_json(USERS_FILE, users)
+    return True
+
+def accept_friend_request(user, friend_to_accept):
+    users = _load_json(USERS_FILE)
+    if friend_to_accept in users[user]['requests_received']:
+        users[user]['requests_received'].remove(friend_to_accept)
+        users[user]['friends'].append(friend_to_accept)
+        
+        users[friend_to_accept]['requests_sent'].remove(user)
+        users[friend_to_accept]['friends'].append(user)
+        _save_json(USERS_FILE, users)
+        return True
+    return False
+
+def remove_friend(user, friend):
+    users = _load_json(USERS_FILE)
+    if friend in users[user]['friends']:
+        users[user]['friends'].remove(friend)
+        users[friend]['friends'].remove(user)
+        _save_json(USERS_FILE, users)
+        return True
+    return False
+
+# Notes Operations
+def get_notes(username):
+    all_notes = _load_json(NOTES_FILE)
+    return all_notes.get(username, [])
+
+def save_note(username, title, content, note_id=None):
+    all_notes = _load_json(NOTES_FILE)
+    user_notes = all_notes.get(username, [])
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    if note_id is not None:
+        # Edit existing
+        for note in user_notes:
+            if note['id'] == note_id:
+                note['title'] = title
+                note['content'] = content
+                note['timestamp'] = timestamp
+                break
+    else:
+        # Create new
+        new_id = len(user_notes) + 1 # Simple ID generation
+        if user_notes:
+             new_id = max(n['id'] for n in user_notes) + 1
+             
+        user_notes.append({
+            "id": new_id,
+            "title": title,
+            "content": content,
+            "timestamp": timestamp
+        })
+    
+    all_notes[username] = user_notes
+    _save_json(NOTES_FILE, all_notes)
+
+def delete_note(username, note_id):
+    all_notes = _load_json(NOTES_FILE)
+    if username in all_notes:
+        all_notes[username] = [n for n in all_notes[username] if n['id'] != note_id]
+        _save_json(NOTES_FILE, all_notes)
+
+# Message Operations
+def get_messages(username):
+    all_msgs = _load_json(MESSAGES_FILE)
+    return all_msgs.get(username, [])
+
+def send_message(from_user, to_user, content):
+    all_msgs = _load_json(MESSAGES_FILE)
+    if to_user not in get_user(to_user): # Validate user exists? Actually get_user loads file again. Optimization needed later.
+        pass # ideally we check if user exists.
+        
+    user_msgs = all_msgs.get(to_user, [])
+    user_msgs.append({
+        "from": from_user,
+        "content": content,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+    all_msgs[to_user] = user_msgs
+    _save_json(MESSAGES_FILE, all_msgs)
+
+# Feedback
+def send_feedback(username, content):
+    feedbacks = _load_json(FEEDBACK_FILE)
+    if isinstance(feedbacks, dict): feedbacks = [] # Handle if file was init as dict
+    feedbacks.append({
+        "user": username,
+        "content": content,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+    _save_json(FEEDBACK_FILE, feedbacks)
+
+def get_feedback():
+    return _load_json(FEEDBACK_FILE)
+
+# Custom Apps
+def get_custom_apps(username):
+    apps = _load_json(APPS_FILE)
+    return apps.get(username, [])
+
+def save_custom_app(username, app_name, code, is_public=False):
+    apps = _load_json(APPS_FILE)
+    user_apps = apps.get(username, [])
+    
+    # Update if exists
+    for app in user_apps:
+        if app['name'] == app_name:
+            app['code'] = code
+            app['is_public'] = is_public
+            break
+    else:
+        user_apps.append({
+            "name": app_name,
+            "code": code,
+            "is_public": is_public
+        })
+    
+    apps[username] = user_apps
+    _save_json(APPS_FILE, apps)
+
+def delete_custom_app(username, app_name):
+    apps = _load_json(APPS_FILE)
+    if username in apps:
+        apps[username] = [a for a in apps[username] if a['name'] != app_name]
+        _save_json(APPS_FILE, apps)
+
+# Initialize
+_init_db()
