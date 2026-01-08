@@ -221,6 +221,17 @@ def studio_ai_assistant(chat: AIChat):
 
 @app.post("/api/upload/{username}")
 async def upload_file(username: str, file: UploadFile = File(...)):
+    # 10MB Limit Enforcement
+    MAX_SIZE = 10 * 1024 * 1024 # 10MB
+    
+    # Read a chunk to check size (fast for large files)
+    contents = await file.read(MAX_SIZE + 1)
+    if len(contents) > MAX_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (Max 10MB)")
+    
+    # Reset seek for saving
+    await file.seek(0)
+    
     # Simple file saving
     filename = f"{username}_{random.randint(1000, 9999)}_{file.filename}"
     file_path = os.path.join(UPLOADS_DIR, filename)
