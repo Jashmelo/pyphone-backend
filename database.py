@@ -144,16 +144,25 @@ def get_messages(username):
 
 def send_message(from_user, to_user, content):
     all_msgs = _load_json(MESSAGES_FILE)
-    if to_user not in get_user(to_user): # Validate user exists? Actually get_user loads file again. Optimization needed later.
-        pass # ideally we check if user exists.
-        
-    user_msgs = all_msgs.get(to_user, [])
-    user_msgs.append({
+    
+    msg_obj = {
         "from": from_user,
+        "to": to_user,
         "content": content,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    })
-    all_msgs[to_user] = user_msgs
+    }
+    
+    # 1. Save to Receiver's Inbox
+    receiver_msgs = all_msgs.get(to_user, [])
+    receiver_msgs.append(msg_obj)
+    all_msgs[to_user] = receiver_msgs
+    
+    # 2. Save to Sender's Outbox (if different)
+    if from_user != to_user:
+        sender_msgs = all_msgs.get(from_user, [])
+        sender_msgs.append(msg_obj)
+        all_msgs[from_user] = sender_msgs
+        
     _save_json(MESSAGES_FILE, all_msgs)
 
 # User Operations
