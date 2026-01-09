@@ -297,5 +297,13 @@ def set_app_visibility(owner, app_name, is_public):
         return True
     return False
 
+def delete_custom_app(username, app_name):
+    apps = _load_json(APPS_FILE)
+    if username in apps:
+        apps[username] = [app for app in apps[username] if app['name'] != app_name]
+        _save_json(APPS_FILE, apps)
+        return True
+    return False
+
 # Initialize
 _init_db()

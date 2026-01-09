@@ -222,11 +222,23 @@ def save_app(username: str, app: CustomApp):
     database.save_custom_app(username, app.app_name, app.code, app.is_public)
     return {"status": "success"}
 
+@app.delete("/api/apps/{username}/{app_name}")
+def delete_app(username: str, app_name: str):
+    success = database.delete_custom_app(username, app_name)
+    return {"status": "success" if success else "failed"}
+
 # --- NEW AI & MULTIMEDIA ENDPOINTS ---
 
 class AIChat(BaseModel):
     message: str
     context: Optional[str] = None
+
+@app.get("/api/ai/status")
+def get_ai_status():
+    return {
+        "configured": GEMINI_API_KEY is not None,
+        "mode": "production" if GEMINI_API_KEY else "simulation"
+    }
 
 @app.post("/api/ai/nexus")
 def nexus_ai_chat(chat: AIChat):
