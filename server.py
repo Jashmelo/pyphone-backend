@@ -159,6 +159,12 @@ def accept_friend_request(req: dict):
     success = database.accept_friend_request(req['user'], req['friend'])
     return {"status": "success" if success else "failed"}
 
+@app.post("/api/friends/remove")
+def remove_friend(req: dict):
+    # expect { "user": "...", "friend": "..." }
+    success = database.remove_friend(req['user'], req['friend'])
+    return {"status": "success" if success else "failed"}
+
 @app.get("/api/admin/stats")
 def get_admin_stats():
     users = database._load_json(database.USERS_FILE)
