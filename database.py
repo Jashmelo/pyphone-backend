@@ -100,12 +100,15 @@ def accept_friend_request(user, friend_to_accept):
 
 def remove_friend(user, friend):
     users = _load_json(USERS_FILE)
-    if friend in users[user]['friends']:
-        users[user]['friends'].remove(friend)
+    if user not in users or friend not in users:
+        return False
+    if friend not in users[user]['friends']:
+        return False
+    users[user]['friends'].remove(friend)
+    if user in users[friend]['friends']:
         users[friend]['friends'].remove(user)
-        _save_json(USERS_FILE, users)
-        return True
-    return False
+    _save_json(USERS_FILE, users)
+    return True
 
 # Notes Operations
 def get_notes(username):
