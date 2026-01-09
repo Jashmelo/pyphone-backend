@@ -66,6 +66,10 @@ class CustomApp(BaseModel):
 def read_root():
     return {"message": "PyPhone OS Server Running"}
 
+@app.head("/")
+def read_root_head():
+    return {}
+
 @app.post("/api/login")
 def login(user: UserLogin):
     if database.verify_login(user.username, user.password):
