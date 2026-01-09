@@ -8,6 +8,12 @@ import uvicorn
 import os
 import shutil
 import random
+import google.generativeai as genai
+
+# Configure Gemini if API Key exists
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 app = FastAPI()
 
@@ -160,6 +166,12 @@ def get_admin_stats():
 def get_all_feedback():
     return database.get_feedback()
 
+@app.post("/api/feedback")
+def submit_user_feedback(req: dict):
+    # expect { "username": "...", "content": "..." }
+    database.send_feedback(req['username'], req['content'])
+    return {"status": "success"}
+
 @app.delete("/api/admin/feedback/{fb_id}")
 def delete_feedback(fb_id: int):
     database.delete_feedback(fb_id)
@@ -197,27 +209,45 @@ class AIChat(BaseModel):
 
 @app.post("/api/ai/nexus")
 def nexus_ai_chat(chat: AIChat):
-    # Simulated AI logic
-    responses = [
-        "Analyzing kernel data...",
-        "Interesting query. Here's what I found in the system logs.",
-        "Your request has been processed. Powering up neural links.",
-        "I'm sorry, I cannot perform that action outside of sandbox mode.",
-        "System stability is at 99.8%. How can I assist further?",
-        "Searching local databases for relevant information."
-    ]
-    return {"response": f"{random.choice(responses)}\n\nYou said: '{chat.message}'"}
+    if not GEMINI_API_KEY:
+        # Fallback to simulation
+        responses = [
+            "Analyzing kernel data...",
+            "Interesting query. Here's what I found in the system logs.",
+            "Your request has been processed. Powering up neural links.",
+            "I'm sorry, I cannot perform that action outside of sandbox mode.",
+            "System stability is at 99.8%. How can I assist further?",
+            "Searching local databases for relevant information."
+        ]
+        return {"response": f"{random.choice(responses)}\n\nYou said: '{chat.message}'"}
+    
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        system_instr = "You are Nexus AI, the core intelligence of the PyPhone Web OS. You are futuristic, concise, and helpful. You reside within a simulated operating system."
+        response = model.generate_content(f"{system_instr}\n\nUser: {chat.message}")
+        return {"response": response.text}
+    except Exception as e:
+        return {"response": f"AI Error: {str(e)}. Reverting to local buffers."}
 
 @app.post("/api/ai/studio")
 def studio_ai_assistant(chat: AIChat):
-    # Context-aware coding assistant simulation
-    lang_info = ""
-    if chat.context and "[LANG:" in chat.context:
-        lang_info = f"I see you're writing in {chat.context.split(']')[0][6:]}."
+    if not GEMINI_API_KEY:
+        # Fallback to simulation
+        lang_info = ""
+        if chat.context and "[LANG:" in chat.context:
+            lang_info = f"I see you're writing in {chat.context.split(']')[0][6:]}."
+        
+        return {
+            "response": f"{lang_info}\nBased on your request '{chat.message}', I suggest checking your loops and ensuring all imports are correct. I've optimized your logic buffers."
+        }
     
-    return {
-        "response": f"{lang_info}\nBased on your request '{chat.message}', I suggest checking your loops and ensuring all imports are correct. I've optimized your logic buffers."
-    }
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        system_instr = f"You are the Dev Studio AI Assistant. You help users write and debug code within the PyPhone Web OS. Context: {chat.context}"
+        response = model.generate_content(f"{system_instr}\n\nUser: {chat.message}")
+        return {"response": response.text}
+    except Exception as e:
+        return {"response": f"Code Assistant Error: {str(e)}"}
 
 @app.post("/api/upload/{username}")
 async def upload_file(username: str, file: UploadFile = File(...)):
