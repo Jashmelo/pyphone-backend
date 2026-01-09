@@ -58,6 +58,17 @@ def verify_login(username, password):
         return True
     return False
 
+def update_settings(username, settings):
+    users = _load_json(USERS_FILE)
+    if username in users:
+        # Merge settings
+        current_settings = users[username].get("settings", {})
+        current_settings.update(settings)
+        users[username]["settings"] = current_settings
+        _save_json(USERS_FILE, users)
+        return True
+    return False
+
 def get_friends(username):
     user = get_user(username)
     return user.get("friends", []) if user else []
@@ -227,7 +238,45 @@ def delete_feedback(feedback_id):
     feedbacks = [f for f in feedbacks if f.get('id') != feedback_id]
     _save_json(FEEDBACK_FILE, feedbacks)
 
-# Custom Apps Oversight
+# Custom Apps Operations
+def save_custom_app(username, app_name, code, is_public=False):
+    apps = _load_json(APPS_FILE)
+    if username not in apps:
+        apps[username] = []
+    
+    # Check if app already exists (update it)
+    found = False
+    for app in apps[username]:
+        if app['name'] == app_name:
+            app['code'] = code
+            app['is_public'] = is_public
+            found = True
+            break
+    
+    if not found:
+        apps[username].append({
+            "name": app_name,
+            "code": code,
+            "is_public": is_public,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+    
+    _save_json(APPS_FILE, apps)
+    return True
+
+def get_public_apps():
+    all_users_apps = _load_json(APPS_FILE)
+    results = []
+    for username, apps in all_users_apps.items():
+        for app in apps:
+            if app.get('is_public'):
+                results.append({**app, "owner": username})
+    return results
+
+def get_user_apps(username):
+    all_users_apps = _load_json(APPS_FILE)
+    return all_users_apps.get(username, [])
+
 def get_all_custom_apps():
     # Returns all apps across all users
     all_users_apps = _load_json(APPS_FILE)

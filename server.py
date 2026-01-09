@@ -139,6 +139,14 @@ def get_friends(username: str):
         "sent": user_data.get("requests_sent", [])
     }
 
+@app.patch("/api/users/{username}/settings")
+def set_user_settings(username: str, settings: dict):
+    success = database.update_settings(username, settings)
+    if success:
+        return {"status": "success"}
+    else:
+        raise HTTPException(status_code=404, detail="User not found")
+
 @app.post("/api/friends/request")
 def send_friend_request(req: dict):
     # expect { "from": "...", "to": "..." }
@@ -192,7 +200,16 @@ def delete_user(username: str):
 
 @app.get("/api/admin/apps")
 def get_all_apps_for_moderation():
+    # Admins see everything
     return database.get_all_custom_apps()
+
+@app.get("/api/apps/public")
+def get_public_app_store():
+    return database.get_public_apps()
+
+@app.get("/api/apps/{username}")
+def get_user_personalized_apps(username: str):
+    return database.get_user_apps(username)
 
 @app.post("/api/admin/apps/visibility")
 def set_app_visibility(req: dict):
