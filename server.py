@@ -138,6 +138,24 @@ def send_message(username: str, message: Message):
     )
     return {"status": "success"}
 
+@app.delete("/api/messages/{username}/{message_id}")
+def delete_message(username: str, message_id: int):
+    """Delete a specific message - CRITICAL: Save data"""
+    success = database.delete_message(username, message_id)
+    if success:
+        return {"status": "success"}
+    else:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+@app.delete("/api/chats/{username}/{other_user}")
+def delete_chat(username: str, other_user: str):
+    """Delete entire chat between two users - CRITICAL: Save data"""
+    success = database.delete_chat(username, other_user)
+    if success:
+        return {"status": "success"}
+    else:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
 # Ensure Admin exists
 if not database.get_user("admin"):
     database.create_user("admin", "1000011", is_admin=True)
@@ -157,6 +175,15 @@ def get_friends(username: str):
         "received": user_data.get("requests_received", []),
         "sent": user_data.get("requests_sent", [])
     }
+
+@app.get("/api/friends/{username}/{friend}")
+def get_friendship_date(username: str, friend: str):
+    """Get friendship date for a friend - CRITICAL: Return saved data"""
+    date = database.get_friendship_date(username, friend)
+    if date:
+        return {"date": date}
+    else:
+        raise HTTPException(status_code=404, detail="Friendship date not found")
 
 @app.patch("/api/users/{username}/settings")
 def set_user_settings(username: str, settings: dict):
@@ -184,6 +211,28 @@ def remove_friend(req: dict):
     success = database.remove_friend(req['user'], req['friend'])
     return {"status": "success" if success else "failed"}
 
+@app.post("/api/friends/block")
+def block_user(req: dict):
+    """Block a user - CRITICAL: Save all data"""
+    # expect { "user": "...", "blocked_user": "..." }
+    success = database.block_user(req['user'], req['blocked_user'])
+    return {"status": "success" if success else "failed"}
+
+@app.post("/api/friends/unblock")
+def unblock_user(req: dict):
+    """Unblock a user - CRITICAL: Save data"""
+    # expect { "user": "...", "blocked_user": "..." }
+    success = database.unblock_user(req['user'], req['blocked_user'])
+    return {"status": "success" if success else "failed"}
+
+@app.get("/api/friends/{username}/blocked")
+def get_blocked_users(username: str):
+    """Get list of blocked users"""
+    user_data = database.get_user(username)
+    if not user_data:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"blocked": user_data.get("blocked", [])}
+
 # ============================================
 # SUSPENSION ENDPOINTS - FULLY WORKING
 # ============================================
@@ -204,7 +253,7 @@ def suspend_user_account(username: str, req: SuspensionRequest):
     if not database.get_user(username):
         raise HTTPException(status_code=404, detail="User not found")
     
-    # Create suspension
+    # Create suspension - CRITICAL: Save data
     success = database.suspend_user(username, req.hours, req.reason)
     
     if success:
@@ -214,7 +263,7 @@ def suspend_user_account(username: str, req: SuspensionRequest):
 
 @app.delete("/api/users/{username}/suspend")
 def unsuspend_user_account(username: str):
-    """Remove suspension from a user account (manual override)"""
+    """Remove suspension from a user account (manual override) - CRITICAL: Save data"""
     if username == "admin":
         raise HTTPException(status_code=403, detail="Cannot unsuspend admin")
     
