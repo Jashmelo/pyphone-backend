@@ -10,11 +10,13 @@ MESSAGES_FILE = os.path.join(DATA_DIR, "messages.json")
 FEEDBACK_FILE = os.path.join(DATA_DIR, "feedback.json")
 APPS_FILE = os.path.join(DATA_DIR, "custom_apps.json")
 SUSPENSIONS_FILE = os.path.join(DATA_DIR, "suspensions.json")
+BLOCKED_FILE = os.path.join(DATA_DIR, "blocked.json")
+FRIENDSHIP_FILE = os.path.join(DATA_DIR, "friendships.json")
 
 def _init_db():
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR)
-    for f in [USERS_FILE, NOTES_FILE, MESSAGES_FILE, FEEDBACK_FILE, APPS_FILE, SUSPENSIONS_FILE]:
+    for f in [USERS_FILE, NOTES_FILE, MESSAGES_FILE, FEEDBACK_FILE, APPS_FILE, SUSPENSIONS_FILE, BLOCKED_FILE, FRIENDSHIP_FILE]:
         if not os.path.exists(f):
             with open(f, 'w') as fp:
                 json.dump({}, fp) # Default empty dict or list
@@ -27,8 +29,19 @@ def _load_json(filepath):
         return {}
 
 def _save_json(filepath, data):
-    with open(filepath, 'w') as f:
-        json.dump(data, f, indent=2)
+    """CRITICAL: Always save with proper error handling"""
+    try:
+        # Write to temp file first for atomicity
+        temp_path = filepath + ".tmp"
+        with open(temp_path, 'w') as f:
+            json.dump(data, f, indent=2)
+        # Atomic rename
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        os.rename(temp_path, filepath)
+    except Exception as e:
+        print(f"CRITICAL ERROR saving {filepath}: {e}")
+        raise
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -48,7 +61,9 @@ def create_user(username, password, is_admin=False):
         "friends": [],
         "requests_sent": [],
         "requests_received": [],
-        "settings": {"clock_24h": True, "wallpaper": "neural"}
+        "blocked": [],
+        "settings": {"clock_24h": True, "wallpaper": "neural"},
+        "created_at": datetime.now().isoformat()
     }
     _save_json(USERS_FILE, users)
     return True
@@ -89,27 +104,115 @@ def send_friend_request(from_user, to_user):
 
 def accept_friend_request(user, friend_to_accept):
     users = _load_json(USERS_FILE)
+    friendships = _load_json(FRIENDSHIP_FILE)
+    
     if friend_to_accept in users[user]['requests_received']:
         users[user]['requests_received'].remove(friend_to_accept)
         users[user]['friends'].append(friend_to_accept)
         
         users[friend_to_accept]['requests_sent'].remove(user)
         users[friend_to_accept]['friends'].append(user)
+        
+        # Record friendship date (PRIORITY: Save this)
+        friendship_key = f"{user}_{friend_to_accept}"
+        friendship_key_reverse = f"{friend_to_accept}_{user}"
+        friendships[friendship_key] = datetime.now().isoformat()
+        friendships[friendship_key_reverse] = datetime.now().isoformat()
+        
         _save_json(USERS_FILE, users)
+        _save_json(FRIENDSHIP_FILE, friendships)
         return True
     return False
 
+def get_friendship_date(user1, user2):
+    """Get the date two users became friends"""
+    friendships = _load_json(FRIENDSHIP_FILE)
+    key = f"{user1}_{user2}"
+    key_reverse = f"{user2}_{user1}"
+    
+    if key in friendships:
+        return friendships[key]
+    elif key_reverse in friendships:
+        return friendships[key_reverse]
+    return None
+
 def remove_friend(user, friend):
     users = _load_json(USERS_FILE)
+    friendships = _load_json(FRIENDSHIP_FILE)
+    
     if user not in users or friend not in users:
         return False
     if friend not in users[user]['friends']:
         return False
+    
     users[user]['friends'].remove(friend)
     if user in users[friend]['friends']:
-        users[friend]['friends'].remove(user)
+        users[friend]['friends'].remove(friend)
+    
+    # Remove friendship date record (PRIORITY: Save this)
+    friendship_key = f"{user}_{friend}"
+    friendship_key_reverse = f"{friend}_{user}"
+    if friendship_key in friendships:
+        del friendships[friendship_key]
+    if friendship_key_reverse in friendships:
+        del friendships[friendship_key_reverse]
+    
+    _save_json(USERS_FILE, users)
+    _save_json(FRIENDSHIP_FILE, friendships)
+    return True
+
+def block_user(user, blocked_user):
+    """Block a user and remove from friends (PRIORITY: Save all data)"""
+    users = _load_json(USERS_FILE)
+    
+    if user not in users or blocked_user not in users:
+        return False
+    
+    # Add to blocked list if not already there
+    if blocked_user not in users[user].get('blocked', []):
+        if 'blocked' not in users[user]:
+            users[user]['blocked'] = []
+        users[user]['blocked'].append(blocked_user)
+    
+    # Remove from friends if they are friends
+    if blocked_user in users[user]['friends']:
+        users[user]['friends'].remove(blocked_user)
+    if user in users[blocked_user].get('friends', []):
+        users[blocked_user]['friends'].remove(user)
+    
+    # Clean up friend requests
+    if blocked_user in users[user].get('requests_sent', []):
+        users[user]['requests_sent'].remove(blocked_user)
+        if user in users[blocked_user].get('requests_received', []):
+            users[blocked_user]['requests_received'].remove(user)
+    
+    if blocked_user in users[user].get('requests_received', []):
+        users[user]['requests_received'].remove(blocked_user)
+        if user in users[blocked_user].get('requests_sent', []):
+            users[blocked_user]['requests_sent'].remove(user)
+    
     _save_json(USERS_FILE, users)
     return True
+
+def unblock_user(user, blocked_user):
+    """Unblock a user (PRIORITY: Save data)"""
+    users = _load_json(USERS_FILE)
+    
+    if user not in users:
+        return False
+    
+    if 'blocked' in users[user] and blocked_user in users[user]['blocked']:
+        users[user]['blocked'].remove(blocked_user)
+        _save_json(USERS_FILE, users)
+        return True
+    return False
+
+def is_blocked(user, potential_blocker):
+    """Check if user is blocked by potential_blocker"""
+    users = _load_json(USERS_FILE)
+    if potential_blocker in users:
+        return user in users[potential_blocker].get('blocked', [])
+    return False
 
 # Notes Operations
 def get_notes(username):
@@ -158,15 +261,17 @@ def get_messages(username):
     return all_msgs.get(username, [])
 
 def send_message(from_user, to_user, content, attachment_url=None, attachment_type=None):
+    """Send message - PRIORITY: Save all data"""
     all_msgs = _load_json(MESSAGES_FILE)
     
     msg_obj = {
+        "id": int(datetime.now().timestamp() * 1000),  # Unique message ID
         "from": from_user,
         "to": to_user,
         "content": content,
         "attachment_url": attachment_url,
         "attachment_type": attachment_type,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "timestamp": datetime.now().strftime("%H:%M %p")
     }
     
     # 1. Save to Receiver's Inbox
@@ -182,12 +287,55 @@ def send_message(from_user, to_user, content, attachment_url=None, attachment_ty
         
     _save_json(MESSAGES_FILE, all_msgs)
 
+def delete_message(username, message_id):
+    """Delete a specific message - PRIORITY: Save data"""
+    all_msgs = _load_json(MESSAGES_FILE)
+    
+    if username in all_msgs:
+        # Find and remove message
+        original_count = len(all_msgs[username])
+        all_msgs[username] = [m for m in all_msgs[username] if m.get('id') != message_id]
+        
+        # Save if message was removed
+        if len(all_msgs[username]) < original_count:
+            _save_json(MESSAGES_FILE, all_msgs)
+            return True
+    return False
+
+def delete_chat(user1, user2):
+    """Delete all messages between two users - PRIORITY: Save data"""
+    all_msgs = _load_json(MESSAGES_FILE)
+    
+    deleted_count = 0
+    
+    # Delete from user1's messages
+    if user1 in all_msgs:
+        original_count = len(all_msgs[user1])
+        all_msgs[user1] = [m for m in all_msgs[user1] 
+                          if not ((m['from'] == user2 and m['to'] == user1) or 
+                                 (m['from'] == user1 and m['to'] == user2))]
+        deleted_count += original_count - len(all_msgs[user1])
+    
+    # Delete from user2's messages
+    if user2 in all_msgs:
+        original_count = len(all_msgs[user2])
+        all_msgs[user2] = [m for m in all_msgs[user2] 
+                          if not ((m['from'] == user1 and m['to'] == user2) or 
+                                 (m['from'] == user2 and m['to'] == user1))]
+        deleted_count += original_count - len(all_msgs[user2])
+    
+    if deleted_count > 0:
+        _save_json(MESSAGES_FILE, all_msgs)
+        return True
+    return False
+
 # User Operations
 def get_all_users():
     users = _load_json(USERS_FILE)
     return [{"username": u, "is_admin": d.get("is_admin", False)} for u, d in users.items()]
 
 def delete_user(username):
+    """Delete user and all associated data - PRIORITY: Save all data"""
     if username == "admin": return False # Protect admin
     
     # 1. Delete user entry
@@ -202,13 +350,13 @@ def delete_user(username):
         del notes[username]
         _save_json(NOTES_FILE, notes)
         
-    # 3. Clean up messages (optional: delete messages *to* this user)
+    # 3. Delete messages
     msgs = _load_json(MESSAGES_FILE)
     if username in msgs:
         del msgs[username]
         _save_json(MESSAGES_FILE, msgs)
         
-    # 4. Cleanup apps
+    # 4. Delete apps
     apps = _load_json(APPS_FILE)
     if username in apps:
         del apps[username]
@@ -219,10 +367,15 @@ def delete_user(username):
     if username in suspensions:
         del suspensions[username]
         _save_json(SUSPENSIONS_FILE, suspensions)
+    
+    # 6. Remove friendship records
+    friendships = _load_json(FRIENDSHIP_FILE)
+    to_delete = [k for k in friendships.keys() if username in k]
+    for k in to_delete:
+        del friendships[k]
+    _save_json(FRIENDSHIP_FILE, friendships)
         
     return True
-
-# ... existing code ...
 
 # Feedback
 def send_feedback(username, content):
@@ -316,11 +469,11 @@ def delete_custom_app(username, app_name):
     return False
 
 # ============================================
-# SUSPENSION OPERATIONS - FIXED & WORKING
+# SUSPENSION OPERATIONS - CRITICAL SAVE
 # ============================================
 
 def suspend_user(username, hours, reason):
-    """Suspend a user account for specified hours with a reason - CRITICAL FIX"""
+    """Suspend a user account for specified hours with a reason - CRITICAL: Save data"""
     if username == "admin": return False  # Protect admin account
     
     # Verify user exists (CRITICAL: Check user exists in USERS_FILE)
@@ -335,7 +488,7 @@ def suspend_user(username, hours, reason):
     # Load suspensions - keep separate from user data
     suspensions = _load_json(SUSPENSIONS_FILE)
     
-    # Store suspension data separately
+    # Store suspension data separately - PRIORITY: Save this
     suspensions[username] = {
         "is_suspended": True,
         "reason": reason,
@@ -359,7 +512,7 @@ def get_suspension_status(username):
     
     # Check if suspension has expired
     if datetime.now() >= suspend_until:
-        # Auto-remove expired suspension
+        # Auto-remove expired suspension - PRIORITY: Save this
         del suspensions[username]
         _save_json(SUSPENSIONS_FILE, suspensions)
         return {"is_suspended": False, "reason": None, "expire_time": None}
@@ -373,7 +526,7 @@ def get_suspension_status(username):
     }
 
 def unsuspend_user(username):
-    """Remove suspension from a user account"""
+    """Remove suspension from a user account - PRIORITY: Save data"""
     if username == "admin": return False  # Protect admin
     
     suspensions = _load_json(SUSPENSIONS_FILE)
@@ -385,7 +538,7 @@ def unsuspend_user(username):
     return False
 
 def override_suspension(username, new_hours):
-    """Override suspension with new duration"""
+    """Override suspension with new duration - PRIORITY: Save data"""
     if username == "admin": return False  # Protect admin
     
     suspensions = _load_json(SUSPENSIONS_FILE)
