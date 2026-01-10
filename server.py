@@ -60,6 +60,11 @@ class CustomApp(BaseModel):
     code: str
     is_public: bool = False
 
+class SuspensionRequest(BaseModel):
+    hours: int
+    reason: str
+    suspend_until: Optional[str] = None
+
 # Routes
 
 @app.get("/")
@@ -72,6 +77,11 @@ def read_root_head():
 
 @app.post("/api/login")
 def login(user: UserLogin):
+    # Check if user is suspended before allowing login
+    susp_status = database.get_suspension_status(user.username)
+    if susp_status.get("is_suspended"):
+        raise HTTPException(status_code=403, detail="Account suspended")
+    
     if database.verify_login(user.username, user.password):
         return {"status": "success", "username": user.username}
     else:
@@ -164,6 +174,49 @@ def remove_friend(req: dict):
     # expect { "user": "...", "friend": "..." }
     success = database.remove_friend(req['user'], req['friend'])
     return {"status": "success" if success else "failed"}
+
+# ============================================
+# SUSPENSION ENDPOINTS - User Data First!
+# ============================================
+
+@app.get("/api/users/{username}/suspension")
+def get_user_suspension(username: str):
+    """Get suspension status for a user"""
+    status = database.get_suspension_status(username)
+    return status
+
+@app.post("/api/users/{username}/suspend")
+def suspend_user_account(username: str, req: SuspensionRequest):
+    """Suspend a user account for specified hours with reason"""
+    if username == "admin":
+        raise HTTPException(status_code=403, detail="Cannot suspend admin account")
+    
+    # Verify user exists
+    if not database.get_user(username):
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Create suspension
+    success = database.suspend_user(username, req.hours, req.reason)
+    
+    if success:
+        return {"status": "success", "message": f"@{username} suspended for {req.hours} hours"}
+    else:
+        raise HTTPException(status_code=400, detail="Failed to suspend user")
+
+@app.delete("/api/users/{username}/suspend")
+def unsuspend_user_account(username: str):
+    """Remove suspension from a user account (manual override)"""
+    if username == "admin":
+        raise HTTPException(status_code=403, detail="Cannot unsuspend admin")
+    
+    success = database.unsuspend_user(username)
+    
+    if success:
+        return {"status": "success", "message": f"@{username} suspension removed"}
+    else:
+        raise HTTPException(status_code=404, detail="No active suspension for this user")
+
+# ============================================
 
 @app.get("/api/admin/stats")
 def get_admin_stats():
