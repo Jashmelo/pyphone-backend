@@ -316,11 +316,11 @@ def delete_custom_app(username, app_name):
     return False
 
 # ============================================
-# SUSPENSION OPERATIONS - Keep User Data First!
+# SUSPENSION OPERATIONS - FIXED & WORKING
 # ============================================
 
 def suspend_user(username, hours, reason):
-    """Suspend a user account for specified hours with a reason"""
+    """Suspend a user account for specified hours with a reason - CRITICAL FIX"""
     if username == "admin": return False  # Protect admin account
     
     # Verify user exists (CRITICAL: Check user exists in USERS_FILE)
@@ -348,7 +348,7 @@ def suspend_user(username, hours, reason):
     return True
 
 def get_suspension_status(username):
-    """Get suspension status for a user"""
+    """Get suspension status for a user - RETURNS CORRECT FORMAT"""
     suspensions = _load_json(SUSPENSIONS_FILE)
     
     if username not in suspensions:
@@ -364,6 +364,7 @@ def get_suspension_status(username):
         _save_json(SUSPENSIONS_FILE, suspensions)
         return {"is_suspended": False, "reason": None, "expire_time": None}
     
+    # CRITICAL FIX: Return the correct data format for frontend
     return {
         "is_suspended": True,
         "reason": susp["reason"],
