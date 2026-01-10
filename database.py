@@ -9,11 +9,12 @@ NOTES_FILE = os.path.join(DATA_DIR, "notes.json")
 MESSAGES_FILE = os.path.join(DATA_DIR, "messages.json")
 FEEDBACK_FILE = os.path.join(DATA_DIR, "feedback.json")
 APPS_FILE = os.path.join(DATA_DIR, "custom_apps.json")
+SUSPENSIONS_FILE = os.path.join(DATA_DIR, "suspensions.json")
 
 def _init_db():
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR)
-    for f in [USERS_FILE, NOTES_FILE, MESSAGES_FILE, FEEDBACK_FILE, APPS_FILE]:
+    for f in [USERS_FILE, NOTES_FILE, MESSAGES_FILE, FEEDBACK_FILE, APPS_FILE, SUSPENSIONS_FILE]:
         if not os.path.exists(f):
             with open(f, 'w') as fp:
                 json.dump({}, fp) # Default empty dict or list
@@ -213,6 +214,12 @@ def delete_user(username):
         del apps[username]
         _save_json(APPS_FILE, apps)
         
+    # 5. Remove suspension if exists
+    suspensions = _load_json(SUSPENSIONS_FILE)
+    if username in suspensions:
+        del suspensions[username]
+        _save_json(SUSPENSIONS_FILE, suspensions)
+        
     return True
 
 # ... existing code ...
@@ -305,6 +312,92 @@ def delete_custom_app(username, app_name):
     if username in apps:
         apps[username] = [app for app in apps[username] if app['name'] != app_name]
         _save_json(APPS_FILE, apps)
+        return True
+    return False
+
+# ============================================
+# SUSPENSION OPERATIONS - Keep User Data First!
+# ============================================
+
+def suspend_user(username, hours, reason):
+    """Suspend a user account for specified hours with a reason"""
+    if username == "admin": return False  # Protect admin account
+    
+    # Verify user exists (CRITICAL: Check user exists in USERS_FILE)
+    users = _load_json(USERS_FILE)
+    if username not in users:
+        return False
+    
+    # Calculate suspension expiry time
+    from datetime import timedelta
+    suspend_until = datetime.now() + timedelta(hours=hours)
+    
+    # Load suspensions - keep separate from user data
+    suspensions = _load_json(SUSPENSIONS_FILE)
+    
+    # Store suspension data separately
+    suspensions[username] = {
+        "is_suspended": True,
+        "reason": reason,
+        "suspend_until": suspend_until.isoformat(),
+        "suspended_at": datetime.now().isoformat(),
+        "hours": hours
+    }
+    
+    _save_json(SUSPENSIONS_FILE, suspensions)
+    return True
+
+def get_suspension_status(username):
+    """Get suspension status for a user"""
+    suspensions = _load_json(SUSPENSIONS_FILE)
+    
+    if username not in suspensions:
+        return {"is_suspended": False, "reason": None, "expire_time": None}
+    
+    susp = suspensions[username]
+    suspend_until = datetime.fromisoformat(susp["suspend_until"])
+    
+    # Check if suspension has expired
+    if datetime.now() >= suspend_until:
+        # Auto-remove expired suspension
+        del suspensions[username]
+        _save_json(SUSPENSIONS_FILE, suspensions)
+        return {"is_suspended": False, "reason": None, "expire_time": None}
+    
+    return {
+        "is_suspended": True,
+        "reason": susp["reason"],
+        "expire_time": susp["suspend_until"],
+        "suspended_at": susp["suspended_at"]
+    }
+
+def unsuspend_user(username):
+    """Remove suspension from a user account"""
+    if username == "admin": return False  # Protect admin
+    
+    suspensions = _load_json(SUSPENSIONS_FILE)
+    
+    if username in suspensions:
+        del suspensions[username]
+        _save_json(SUSPENSIONS_FILE, suspensions)
+        return True
+    return False
+
+def override_suspension(username, new_hours):
+    """Override suspension with new duration"""
+    if username == "admin": return False  # Protect admin
+    
+    suspensions = _load_json(SUSPENSIONS_FILE)
+    
+    if username in suspensions:
+        from datetime import timedelta
+        suspend_until = datetime.now() + timedelta(hours=new_hours)
+        
+        suspensions[username]["suspend_until"] = suspend_until.isoformat()
+        suspensions[username]["hours"] = new_hours
+        suspensions[username]["suspended_at"] = datetime.now().isoformat()
+        
+        _save_json(SUSPENSIONS_FILE, suspensions)
         return True
     return False
 
