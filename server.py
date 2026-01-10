@@ -77,7 +77,6 @@ def read_root_head():
 
 @app.post("/api/login")
 def login(user: UserLogin):
-    """Login endpoint - CRITICAL: Check suspension FIRST"""
     # Check if user is suspended BEFORE verifying credentials
     susp_status = database.get_suspension_status(user.username)
     if susp_status.get("is_suspended"):
@@ -90,7 +89,6 @@ def login(user: UserLogin):
             }
         )
     
-    # Now verify login credentials
     if database.verify_login(user.username, user.password):
         return {"status": "success", "username": user.username}
     else:
@@ -138,24 +136,6 @@ def send_message(username: str, message: Message):
     )
     return {"status": "success"}
 
-@app.delete("/api/messages/{username}/{message_id}")
-def delete_message(username: str, message_id: int):
-    """Delete a specific message - CRITICAL: Save data"""
-    success = database.delete_message(username, message_id)
-    if success:
-        return {"status": "success"}
-    else:
-        raise HTTPException(status_code=404, detail="Message not found")
-
-@app.delete("/api/chats/{username}/{other_user}")
-def delete_chat(username: str, other_user: str):
-    """Delete entire chat between two users - CRITICAL: Save data"""
-    success = database.delete_chat(username, other_user)
-    if success:
-        return {"status": "success"}
-    else:
-        raise HTTPException(status_code=404, detail="Chat not found")
-
 # Ensure Admin exists
 if not database.get_user("admin"):
     database.create_user("admin", "1000011", is_admin=True)
@@ -175,15 +155,6 @@ def get_friends(username: str):
         "received": user_data.get("requests_received", []),
         "sent": user_data.get("requests_sent", [])
     }
-
-@app.get("/api/friends/{username}/{friend}")
-def get_friendship_date(username: str, friend: str):
-    """Get friendship date for a friend - CRITICAL: Return saved data"""
-    date = database.get_friendship_date(username, friend)
-    if date:
-        return {"date": date}
-    else:
-        raise HTTPException(status_code=404, detail="Friendship date not found")
 
 @app.patch("/api/users/{username}/settings")
 def set_user_settings(username: str, settings: dict):
@@ -210,71 +181,6 @@ def remove_friend(req: dict):
     # expect { "user": "...", "friend": "..." }
     success = database.remove_friend(req['user'], req['friend'])
     return {"status": "success" if success else "failed"}
-
-@app.post("/api/friends/block")
-def block_user(req: dict):
-    """Block a user - CRITICAL: Save all data"""
-    # expect { "user": "...", "blocked_user": "..." }
-    success = database.block_user(req['user'], req['blocked_user'])
-    return {"status": "success" if success else "failed"}
-
-@app.post("/api/friends/unblock")
-def unblock_user(req: dict):
-    """Unblock a user - CRITICAL: Save data"""
-    # expect { "user": "...", "blocked_user": "..." }
-    success = database.unblock_user(req['user'], req['blocked_user'])
-    return {"status": "success" if success else "failed"}
-
-@app.get("/api/friends/{username}/blocked")
-def get_blocked_users(username: str):
-    """Get list of blocked users"""
-    user_data = database.get_user(username)
-    if not user_data:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"blocked": user_data.get("blocked", [])}
-
-# ============================================
-# SUSPENSION ENDPOINTS - FULLY WORKING
-# ============================================
-
-@app.get("/api/users/{username}/suspension")
-def get_user_suspension(username: str):
-    """Get suspension status for a user - Returns full suspension data"""
-    status = database.get_suspension_status(username)
-    return status
-
-@app.post("/api/users/{username}/suspend")
-def suspend_user_account(username: str, req: SuspensionRequest):
-    """Suspend a user account for specified hours with reason - ADMIN ONLY"""
-    if username == "admin":
-        raise HTTPException(status_code=403, detail="Cannot suspend admin account")
-    
-    # Verify user exists
-    if not database.get_user(username):
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    # Create suspension - CRITICAL: Save data
-    success = database.suspend_user(username, req.hours, req.reason)
-    
-    if success:
-        return {"status": "success", "message": f"@{username} suspended for {req.hours} hours"}
-    else:
-        raise HTTPException(status_code=400, detail="Failed to suspend user")
-
-@app.delete("/api/users/{username}/suspend")
-def unsuspend_user_account(username: str):
-    """Remove suspension from a user account (manual override) - CRITICAL: Save data"""
-    if username == "admin":
-        raise HTTPException(status_code=403, detail="Cannot unsuspend admin")
-    
-    success = database.unsuspend_user(username)
-    
-    if success:
-        return {"status": "success", "message": f"@{username} suspension removed"}
-    else:
-        raise HTTPException(status_code=404, detail="No active suspension for this user")
-
-# ============================================
 
 @app.get("/api/admin/stats")
 def get_admin_stats():
@@ -424,6 +330,47 @@ async def upload_file(username: str, file: UploadFile = File(...)):
         "type": file.content_type,
         "name": file.filename
     }
+
+# ============================================
+# SUSPENSION ENDPOINTS - FULLY WORKING
+# ============================================
+
+@app.get("/api/users/{username}/suspension")
+def get_user_suspension(username: str):
+    """Get suspension status for a user - Returns full suspension data"""
+    status = database.get_suspension_status(username)
+    return status
+
+@app.post("/api/users/{username}/suspend")
+def suspend_user_account(username: str, req: SuspensionRequest):
+    """Suspend a user account for specified hours with reason - ADMIN ONLY"""
+    if username == "admin":
+        raise HTTPException(status_code=403, detail="Cannot suspend admin account")
+    
+    # Verify user exists
+    if not database.get_user(username):
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Create suspension
+    success = database.suspend_user(username, req.hours, req.reason)
+    
+    if success:
+        return {"status": "success", "message": f"@{username} suspended for {req.hours} hours"}
+    else:
+        raise HTTPException(status_code=400, detail="Failed to suspend user")
+
+@app.delete("/api/users/{username}/suspend")
+def unsuspend_user_account(username: str):
+    """Remove suspension from a user account (manual override)"""
+    if username == "admin":
+        raise HTTPException(status_code=403, detail="Cannot unsuspend admin")
+    
+    success = database.unsuspend_user(username)
+    
+    if success:
+        return {"status": "success", "message": f"@{username} suspension removed"}
+    else:
+        raise HTTPException(status_code=404, detail="No active suspension for this user")
 
 if __name__ == "__main__":
     # Use PORT environment variable if available, otherwise 8000
