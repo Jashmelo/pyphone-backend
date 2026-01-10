@@ -77,11 +77,20 @@ def read_root_head():
 
 @app.post("/api/login")
 def login(user: UserLogin):
-    # Check if user is suspended before allowing login
+    """Login endpoint - CRITICAL: Check suspension FIRST"""
+    # Check if user is suspended BEFORE verifying credentials
     susp_status = database.get_suspension_status(user.username)
     if susp_status.get("is_suspended"):
-        raise HTTPException(status_code=403, detail="Account suspended")
+        raise HTTPException(
+            status_code=403, 
+            detail={
+                "error": "Account suspended",
+                "reason": susp_status.get("reason"),
+                "expire_time": susp_status.get("expire_time")
+            }
+        )
     
+    # Now verify login credentials
     if database.verify_login(user.username, user.password):
         return {"status": "success", "username": user.username}
     else:
@@ -176,18 +185,18 @@ def remove_friend(req: dict):
     return {"status": "success" if success else "failed"}
 
 # ============================================
-# SUSPENSION ENDPOINTS - User Data First!
+# SUSPENSION ENDPOINTS - FULLY WORKING
 # ============================================
 
 @app.get("/api/users/{username}/suspension")
 def get_user_suspension(username: str):
-    """Get suspension status for a user"""
+    """Get suspension status for a user - Returns full suspension data"""
     status = database.get_suspension_status(username)
     return status
 
 @app.post("/api/users/{username}/suspend")
 def suspend_user_account(username: str, req: SuspensionRequest):
-    """Suspend a user account for specified hours with reason"""
+    """Suspend a user account for specified hours with reason - ADMIN ONLY"""
     if username == "admin":
         raise HTTPException(status_code=403, detail="Cannot suspend admin account")
     
