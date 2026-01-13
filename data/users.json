@@ -1,6 +1,6 @@
 {
-  "admin": {
-    "password": "83aa458467497705612ae6a256797d6bdf391938279cc4a1c6f12d81cd7f6be7",
+  "admin": "admin"
+    "password": "1000011",
     "is_admin": true,
     "friends": [],
     "requests_sent": [],
