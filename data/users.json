@@ -1,6 +1,6 @@
 {
-  "admin": "admin"
-    "password": "1000011",
+  "admin": ["admin"]
+    "password": ["1000011"],
     "is_admin": true,
     "friends": [],
     "requests_sent": [],
